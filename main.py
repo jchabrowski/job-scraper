@@ -3,32 +3,37 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from dotenv import load_dotenv
+import os
 import time
+
+# XPATHS ARE STORED IN .ENV, SO THE JOB PORTALS I SCRAPE ARE NOT THAT OBVIOUS
+load_dotenv()
 
 service = Service(executable_path="chromedriver.exe")
 driver = webdriver.Chrome(service=service)
 
 # navigate to specified url, most work platforms keep data in url params.
-driver.get("https://it.pracuj.pl/praca/frontend;kw/it%20-%20rozw%C3%B3j%20oprogramowania;cc,5016")
+driver.get(os.getenv("STARTING_PAGE"))
 
 # wait for cookiesm if they popup, accept them
 WebDriverWait(driver, 3).until(
-        EC.presence_of_element_located((By.XPATH, "//button[@data-test='button-submitCookie']"))
+        EC.presence_of_element_located((By.XPATH, os.getenv("COOKIE_XPATH")))
     )
 
-cookie_element = driver.find_element(By.XPATH, "//button[@data-test='button-submitCookie']")
+cookie_element = driver.find_element(By.XPATH, os.getenv("COOKIE_XPATH"))
 
 if cookie_element.is_displayed():
     print('clicking cookies')
     cookie_element.click()
 
-# wait for section-offers, main div that contains all matching/related job offers
+# wait for the main div that contains all matching/related job offers
 WebDriverWait(driver, 2).until(
-        EC.presence_of_element_located((By.XPATH, "//div[@data-test='section-offers']"))
+        EC.presence_of_element_located((By.XPATH, os.getenv("OFFERS_CONTAINER_XPATH")))
     )
 
-offers_element = driver.find_element(By.XPATH, "//div[@data-test='section-offers']")
-children_elements = offers_element.find_elements(By.XPATH, ".//div/div/h2[@data-test='offer-title']")
+offers_element = driver.find_element(By.XPATH, os.getenv("OFFERS_CONTAINER_XPATH"))
+children_elements = offers_element.find_elements(By.XPATH, os.getenv("CHILDREN_ELEMENTS"))
 
 print(f"Scrapping: {len(children_elements)} offers" )
 
