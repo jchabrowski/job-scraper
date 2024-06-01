@@ -1,6 +1,8 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from dotenv import load_dotenv
@@ -14,47 +16,130 @@ service = Service(executable_path="chromedriver.exe")
 driver = webdriver.Chrome(service=service)
 
 # navigate to specified url, most work platforms keep data in url params.
-driver.get(os.getenv("STARTING_PAGE"))
+driver.get(os.getenv("BASE_URL"))
 
-# wait for cookiesm if they popup, accept them
-WebDriverWait(driver, 3).until(
-        EC.presence_of_element_located((By.XPATH, os.getenv("COOKIE_XPATH")))
-    )
+def check_cookies():
+    # wait for cookies - if they pop up, accept them
+    try:
+        WebDriverWait(driver, 8).until(
+                EC.presence_of_element_located((By.XPATH, os.getenv("COOKIE_XPATH")))
+            )
 
-cookie_element = driver.find_element(By.XPATH, os.getenv("COOKIE_XPATH"))
+        cookie_element = driver.find_element(By.XPATH, os.getenv("COOKIE_XPATH"))
 
-if cookie_element.is_displayed():
-    print('clicking cookies')
-    cookie_element.click()
+        if cookie_element.is_displayed():
+            print('clicking cookies')
+            cookie_element.click()
 
-# wait for the main div that contains all matching/related job offers
-WebDriverWait(driver, 2).until(
+        print('waiting for 3 seconds')
+        driver.implicitly_wait(3)
+
+    except TimeoutException:
+        print("Cookies not found with specified timeout")
+
+# access each page once and print all offers
+def main_loop(i):
+    check_cookies()
+
+    if (i > 1):
+        base_url = os.getenv('BASE_URL')
+        new_url = f"{base_url}?pn={i}"
+        driver.get(new_url)
+
+        print(f"Currently navigated to page number {i}")
+        print(f"-----Sleeping for 3 sec----- on {i} main function call")
+        time.sleep(3)
+
+    WebDriverWait(driver, 2).until(
         EC.presence_of_element_located((By.XPATH, os.getenv("OFFERS_CONTAINER_XPATH")))
     )
 
-offers_element = driver.find_element(By.XPATH, os.getenv("OFFERS_CONTAINER_XPATH"))
-children_elements = offers_element.find_elements(By.XPATH, os.getenv("CHILDREN_ELEMENTS"))
+    offers_element = driver.find_element(By.XPATH, os.getenv("OFFERS_CONTAINER_XPATH"))
 
-print(f"Scrapping: {len(children_elements)} offers" )
+    child_elements =  offers_element.find_elements(By.XPATH, "./*")
 
-my_keywords = ['fullstack', 'full stack', 'frontend', 'react', 'javascript', 'js', 'node', 'next', 'next.js']
+    WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.XPATH, os.getenv("OFFER_TITLE_ELEMENT")))
+        )
 
-matched_offers = set()
+    my_keywords = ['fullstack', 'full stack', 'frontend', 'react', 'javascript', 'js', 'node', 'next', 'next.js']
 
-for el in children_elements:
-    print(el.text)
-    for keyword in my_keywords:
-        if keyword in el.text.lower():
-            matched_offers.add(el.text)
-            print(f'Found  <<<{keyword.upper()}>>> matching in ....... <<<{el.text.upper()}>>>')
+    for index, child in enumerate(child_elements):
+        WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.XPATH, os.getenv("OFFERS_CONTAINER_XPATH")))
+        )
+        
+        # print('OFFERS_CONTAINER_XPATH located')
 
+        offers_element = driver.find_element(By.XPATH, os.getenv("OFFERS_CONTAINER_XPATH"))
 
-time.sleep(10)
+        WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.XPATH, os.getenv("OFFER_TITLE_ELEMENT")))
+        )
 
-print(matched_offers)
+        # print('OFFER_TITLE_ELEMENT located')
 
-print('sleeping')
+        child_elements =  offers_element.find_elements(By.XPATH, "./*")
+
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, os.getenv("SINGLE_OFFER_TITLE")))
+            )
+
+            title = child.find_element(By.XPATH, os.getenv("SINGLE_OFFER_TITLE")).text
+
+        except NoSuchElementException:
+            print(f'Child element {index} is missing the offer title.')
+            continue
+
+        try:
+            salary = child.find_element(By.XPATH, os.getenv("SINGLE_OFFER_SALARY")).text
+
+        except NoSuchElementException:
+            print(f'Child element {index} with title <<<{title}>>> is missing salary.')
+            continue
+
+        try:
+            company_name = child.find_element(By.XPATH, os.getenv("SINGLE_OFFER_COMPANY_NAME")).text
+
+        except NoSuchElementException:
+            print(f'Child element {index} with title <<<{title}>>> is missing company name.')
+            continue
+            # anchor_tag_value = driver.find_element(By.XPATH, './/a[@data-test="link-offer"]').get_attribute('href')
+
+        try:
+
+            for keyword in my_keywords:
+                if keyword in title.lower():
+                    print(f'Found <<<{title}>>> <<<{salary}>>> at <<{company_name}>>')
+                    # driver.implicitly_wait(1) 
+
+                    # matched_offers.add({title, salary, company_name})
+
+        except Exception as e:
+            print(f'ERROR PROCESSING CHILD ELEMENT: {e}')
+
+    # href_value = anchor_tag.get_attribute('href')
+
+# print(f"Scrapping: {len(children_elements)} offers" )
+
+WebDriverWait(driver, 5).until(
+        EC.presence_of_element_located((By.XPATH, os.getenv("MAX_PAGINATION")))
+    )
+
+offer_pages_amount = int(driver.find_element(By.XPATH, os.getenv("MAX_PAGINATION")).text)
+
+print(f"I can see there are {offer_pages_amount} pages")
+
+for i in range(1, offer_pages_amount):
+    main_loop(i)
+
+time.sleep(3)
+
+print('-------------------------------------------')
+print('sleeping for 120 sec')
 
 time.sleep(120)
 
 driver.quit()
+
