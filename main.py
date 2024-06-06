@@ -111,9 +111,16 @@ def main_loop(i):
             # anchor_tag_value = driver.find_element(By.XPATH, './/a[@data-test="link-offer"]').get_attribute('href')
 
         try:
+            is_restricted = False
+
             for keyword in restricted_keywords:
                 if keyword in title.lower():
                     print_black_on_red(f'RESTRICTED KEYWORD ----- {keyword} >>> in <<<{title}>>> <<<{salary}>>> at <<{company_name}>>')
+                    is_restricted = True
+                    break
+
+            if is_restricted:
+                continue
 
             for keyword2 in my_keywords:
                 if keyword2 in title.lower():
