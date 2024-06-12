@@ -5,26 +5,41 @@ from selenium.common.exceptions import NoSuchElementException
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from datetime import datetime
 from dotenv import load_dotenv
+from pocketbase import PocketBase
 import os
 import time
 from termcolor import cprint
 
-# XPATHS ARE STORED IN .ENV, SO THE JOB PORTALS I SCRAPE ARE NOT THAT OBVIOUS
+# XPATHS ARE STORED IN .ENV, SO THE RESTRICTED VALUES AND JOB BOARDS I SCRAPE ARE NOT THAT OBVIOUS
 load_dotenv()
 
 service = Service(executable_path="chromedriver.exe")
 driver = webdriver.Chrome(service=service)
 
+client = PocketBase('http://127.0.0.1:8090')
+admin_data = client.admins.auth_with_password(os.getenv("POCKETBASE_MAIL"), os.getenv("POCKETBASE_PW"))
+
+print('sleeping 2 sec, checking if admin data is valid')
+time.sleep(2)
+
+if not (admin_data.is_valid):
+    print('ADMIN DATA NOT VALID, ABORTING..')
+    quit()
+
+
 print_red_on_cyan = lambda x: cprint(x, "red", "on_cyan")
+print_red_on_blue = lambda x: cprint(x, "red", "on_blue")
 print_red_on_yellow = lambda x: cprint(x, "red", "on_yellow")
 print_black_on_red = lambda x: cprint(x, "black", "on_red")
+print_yellow_on_green = lambda x: cprint(x, "yellow", "on_green")
 
 # navigate to specified url, most work platforms keep data in url params.
 driver.get(os.getenv("BASE_URL"))
 
+# wait for cookies - if they pop up, accept them
 def check_cookies():
-    # wait for cookies - if they pop up, accept them
     try:
         WebDriverWait(driver, 8).until(
                 EC.presence_of_element_located((By.XPATH, os.getenv("COOKIE_XPATH")))
@@ -46,6 +61,7 @@ def check_cookies():
 def main_loop(i):
     check_cookies()
 
+    # navigate to next page after first function call
     if (i > 1):
         base_url = os.getenv('BASE_URL')
         new_url = f"{base_url}?pn={i}"
@@ -55,34 +71,23 @@ def main_loop(i):
         print(f"-----Sleeping for 3 sec----- on {i} main function call")
         time.sleep(3)
 
-    WebDriverWait(driver, 2).until(
-        EC.presence_of_element_located((By.XPATH, os.getenv("OFFERS_CONTAINER_XPATH")))
-    )
+    try:
+        WebDriverWait(driver, 2).until(
+            EC.presence_of_element_located((By.XPATH, os.getenv("OFFERS_CONTAINER_XPATH")))
+        )
+
+    except NoSuchElementException:
+            print('<<<<<< CANNOT FIND OFFERS CONTAINER >>>>>> ABORTING')
+            driver.quit()
 
     offers_element = driver.find_element(By.XPATH, os.getenv("OFFERS_CONTAINER_XPATH"))
-
     child_elements =  offers_element.find_elements(By.XPATH, "./*")
-
-    WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.XPATH, os.getenv("OFFER_TITLE_ELEMENT")))
-        )
 
     my_keywords = ['fullstack', 'full stack', 'frontend', 'react', 'javascript', 'js', 'node', 'next', 'next.js']
     restricted_keywords = ['junior', 'qa', 'tester', 'java', 'lead', 'leader', 'staff']
+    restricted_companies = os.getenv('RESTRICTED_COMPANIES', '').split(',')
 
     for index, child in enumerate(child_elements):
-        WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.XPATH, os.getenv("OFFERS_CONTAINER_XPATH")))
-        )
-        
-        offers_element = driver.find_element(By.XPATH, os.getenv("OFFERS_CONTAINER_XPATH"))
-
-        WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.XPATH, os.getenv("OFFER_TITLE_ELEMENT")))
-        )
-
-        child_elements =  offers_element.find_elements(By.XPATH, "./*")
-
         try:
             WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.XPATH, os.getenv("SINGLE_OFFER_TITLE")))
@@ -99,7 +104,7 @@ def main_loop(i):
 
         except NoSuchElementException:
             print_red_on_yellow(f'Child element {index} with title <<<{title}>>> is missing salary.')
-            continue
+            salary = 'MISSING_SALARY'
 
         try:
             company_name_elements = child.find_elements(By.XPATH, os.getenv("SINGLE_OFFER_COMPANY_NAME"))
@@ -108,7 +113,12 @@ def main_loop(i):
         except NoSuchElementException:
             print(f'Child element {index} with title <<<{title}>>> is missing company name.')
             continue
-            # anchor_tag_value = driver.find_element(By.XPATH, './/a[@data-test="link-offer"]').get_attribute('href')
+
+        try:
+            anchor_tag_value = child.find_element(By.XPATH, os.getenv('SINGLE_OFFER_URL')).get_attribute('href')
+        except NoSuchElementException:
+            print_red_on_yellow(f'Child element {index} with title <<<{title}>>> is missing anchor tag.')
+            salary = 'MISSING_ANCHOR_VALUE'
 
         try:
             is_restricted = False
@@ -119,14 +129,38 @@ def main_loop(i):
                     is_restricted = True
                     break
 
+            for company in restricted_companies:
+                if company in company_name.lower():
+                    print_black_on_red(f'RESTRICTED COMPANY NAME ----- {company_name} >>> in <<<{title}>>> <<<{salary}>>> at <<{company_name}>>')
+                    is_restricted = True
+                    break
+
             if is_restricted:
                 continue
 
             for keyword2 in my_keywords:
                 if keyword2 in title.lower():
-                    print_red_on_cyan(f'Found <<<{title}>>> <<<{salary}>>> at <<{company_name}>>')
+                    date_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                    print_red_on_cyan(f'Found <<<{title}>>> <<<{salary}>>> at <<{company_name}>> at <<<< {date_time} >>>> with url {anchor_tag_value}')
+
+                    # todo // open url in new tab -> easy apply -> close window -> insert record into db once applied
+                    records = client.collection('listings').get_full_list(query_params={'filter': f'url="{anchor_tag_value}"'})
+
+                    if not records:
+                        # insert into db
+                        client.collection("listings").create(
+                            {
+                                "title": title,
+                                "salary_any": salary,
+                                "company": company_name,
+                                "scraped_at": date_time,
+                                "url": anchor_tag_value,
+                            })
+                        print_yellow_on_green(f'RECORD INSERTED <<<{title}>>> AT {date_time}')
+                    else:
+                        print(f'Record {title} already in collection!')
+                        
         
-            # matched_offers.add({title, salary, company_name})
 
         except Exception as e:
             print(f'ERROR PROCESSING CHILD ELEMENT: {e}')
@@ -150,4 +184,3 @@ print('sleeping for 120 sec')
 time.sleep(120)
 
 driver.quit()
-
