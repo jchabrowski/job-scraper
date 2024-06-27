@@ -5,6 +5,10 @@ from selenium.common.exceptions import NoSuchElementException
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+
+
+from urllib.parse import urlparse, urlunparse
+from random import randint
 from datetime import datetime
 from dotenv import load_dotenv
 from pocketbase import PocketBase
@@ -20,6 +24,8 @@ driver = webdriver.Chrome(service=service)
 
 client = PocketBase('http://127.0.0.1:8090')
 admin_data = client.admins.auth_with_password(os.getenv("POCKETBASE_MAIL"), os.getenv("POCKETBASE_PW"))
+
+wait = WebDriverWait(driver, 3)
 
 print('sleeping 2 sec, checking if admin data is valid')
 time.sleep(2)
@@ -57,6 +63,25 @@ def check_cookies():
     except TimeoutException:
         print("Cookies not found with specified timeout")
 
+#
+def sanitize_url(url): 
+    parsed_url = urlparse(url)
+    url_without_query = parsed_url._replace(query="")
+    sanitized_url = urlunparse(url_without_query)
+    return sanitized_url
+
+
+def push_record(title: str, salary: str, company_name: str, url: str, withEasyApply: bool):
+    client.collection("listings").create(
+        {
+            "title": title,
+            "salary_any": salary,
+            "company": company_name,
+            "url": url,
+            "withEasyApply": withEasyApply,
+
+        })
+
 # access each page once and print all offers
 def main_loop(i):
     check_cookies()
@@ -84,7 +109,7 @@ def main_loop(i):
     child_elements =  offers_element.find_elements(By.XPATH, "./*")
 
     my_keywords = ['fullstack', 'full stack', 'frontend', 'react', 'javascript', 'js', 'node', 'next', 'next.js']
-    restricted_keywords = ['junior', 'qa', 'tester', 'java', 'lead', 'leader', 'staff']
+    restricted_keywords = ['junior', 'qa', 'tester', 'lead', 'leader', 'staff']
     restricted_companies = os.getenv('RESTRICTED_COMPANIES', '').split(',')
 
     for index, child in enumerate(child_elements):
@@ -142,25 +167,47 @@ def main_loop(i):
                 if keyword2 in title.lower():
                     date_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
                     print_red_on_cyan(f'Found <<<{title}>>> <<<{salary}>>> at <<{company_name}>> at <<<< {date_time} >>>> with url {anchor_tag_value}')
+                    # check for easy apply/default apply -> apply/skip based on easy apply, put record into db once applied/not applied with adequate status.
+                    # todo // keep track of visited urls, skip urls if they were already visited during single session (some jobs are posted multiple times)
 
-                    # todo // open url in new tab -> easy apply -> close window -> insert record into db once applied
-                    records = client.collection('listings').get_full_list(query_params={'filter': f'url="{anchor_tag_value}"'})
+                    # open new tab, sanitize url, paste sanitized url -> query params are stripped because they urls act as unique ids in pocketbase
+                    driver.execute_script("window.open('');")
+                    driver.switch_to.window(driver.window_handles[1])
+                    sanitized_url = sanitize_url(anchor_tag_value)
+                    driver.get(sanitized_url)
 
-                    if not records:
-                        # insert into db
-                        client.collection("listings").create(
-                            {
-                                "title": title,
-                                "salary_any": salary,
-                                "company": company_name,
-                                "scraped_at": date_time,
-                                "url": anchor_tag_value,
-                            })
-                        print_yellow_on_green(f'RECORD INSERTED <<<{title}>>> AT {date_time}')
-                    else:
-                        print(f'Record {title} already in collection!')
-                        
-        
+                    try:
+                        easy_apply_div = driver.find_element(By.XPATH, os.getenv("EASY_APPLY_DIV"))
+                        print_yellow_on_green(f'FOUND EASY APPLY BUTTON')
+
+                        record = client.collection('listings').get_full_list(query_params={'filter': f'url="{sanitized_url}"'})
+
+                        if not record:
+                            # insert into db
+                            push_record(title, salary, company_name, sanitized_url, True)
+                
+                            print_yellow_on_green(f'RECORD INSERTED <<<{title}>>> AT {date_time}')
+                        else:
+                            print(f'Record {title} already in collection!')
+
+                        driver.close()
+                        driver.switch_to.window(driver.window_handles[0])
+
+                    except NoSuchElementException:
+                        print_red_on_yellow(f'NO EASY APPLY on child element {index} on tab <<<<{sanitized_url}>>>>')
+                        record = client.collection('listings').get_full_list(query_params={'filter': f'url="{sanitized_url}"'})
+
+                        if not record:
+                            # insert into db, even easy apply is unavailable
+                            push_record(title, salary, company_name, sanitized_url, False)
+
+                            print_yellow_on_green(f'RECORD WITHOUT EASY APPLY INSERTED <<<{title}>>> AT {date_time}')
+                        else:
+                            print(f'Record {title} already in collection!')
+
+                        driver.close()
+                        driver.switch_to.window(driver.window_handles[0])
+
 
         except Exception as e:
             print(f'ERROR PROCESSING CHILD ELEMENT: {e}')
