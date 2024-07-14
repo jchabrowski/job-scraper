@@ -1,4 +1,4 @@
-### job-scraper
+# job-scraper
 
 ## 🚀 About
 job-scraper is a small proof-of-concept project that scrapes job listing data and extracts it into a local PocketBase database.
