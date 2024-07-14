@@ -1,1 +1,4 @@
 /chromedriver.exe
+.env
+/misc_selectors.txt
+/pocketbase
