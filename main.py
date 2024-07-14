@@ -6,7 +6,6 @@ from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-
 from urllib.parse import urlparse, urlunparse
 from random import randint
 from datetime import datetime
@@ -79,21 +78,20 @@ def push_record(title: str, salary: str, company_name: str, url: str, withEasyAp
             "company": company_name,
             "url": url,
             "withEasyApply": withEasyApply,
-
         })
 
 # access each page once and print all offers
-def main_loop(i):
+def main_loop(pages_with_offers_num):
     check_cookies()
 
     # navigate to next page after first function call
-    if (i > 1):
+    if (pages_with_offers_num > 1):
         base_url = os.getenv('BASE_URL')
-        new_url = f"{base_url}?pn={i}"
+        new_url = f"{base_url}?pn={pages_with_offers_num}"
         driver.get(new_url)
 
-        print(f"Currently navigated to page number {i}")
-        print(f"-----Sleeping for 3 sec----- on {i} main function call")
+        print(f"Currently navigated to page number {pages_with_offers_num}")
+        print(f"-----Sleeping for 3 sec----- on {pages_with_offers_num} main function call")
         time.sleep(3)
 
     try:
@@ -168,9 +166,9 @@ def main_loop(i):
                     date_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
                     print_red_on_cyan(f'Found <<<{title}>>> <<<{salary}>>> at <<{company_name}>> at <<<< {date_time} >>>> with url {anchor_tag_value}')
                     # check for easy apply/default apply -> apply/skip based on easy apply, put record into db once applied/not applied with adequate status.
-                    # todo // keep track of visited urls, skip urls if they were already visited during single session (some jobs are posted multiple times)
+                    # todo // keep track of visited urls + titles/comapnies, skip urls if they were already visited during single session (some jobs are posted multiple times)
 
-                    # open new tab, sanitize url, paste sanitized url -> query params are stripped because they urls act as unique ids in pocketbase
+                    # open new tab, sanitize url, paste sanitized url -> query params are stripped because they act as unique identifiers in pocketbase
                     driver.execute_script("window.open('');")
                     driver.switch_to.window(driver.window_handles[1])
                     sanitized_url = sanitize_url(anchor_tag_value)
@@ -223,11 +221,7 @@ print(f"I can see there are {offer_pages_amount} pages")
 for i in range(1, offer_pages_amount):
     main_loop(i)
 
+print_yellow_on_green(f'Finished scraping {offer_pages_amount} pages, exiting.')
 time.sleep(3)
-
-print('-------------------------------------------')
-print('sleeping for 120 sec')
-
-time.sleep(120)
 
 driver.quit()
