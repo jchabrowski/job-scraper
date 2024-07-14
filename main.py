@@ -154,7 +154,7 @@ def main_loop(pages_with_offers_num):
 
             for company in restricted_companies:
                 if company in company_name.lower():
-                    print_black_on_red(f'RESTRICTED COMPANY NAME ----- {company_name} >>> in <<<{title}>>> <<<{salary}>>> at <<{company_name}>>')
+                    print_black_on_red(f'RESTRICTED COMPANY NAME ----- {company_name} >>> in <<<{title}>>> <<<{salary}>>>')
                     is_restricted = True
                     break
 
@@ -164,9 +164,6 @@ def main_loop(pages_with_offers_num):
             for keyword2 in my_keywords:
                 if keyword2 in title.lower():
                     date_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                    print_red_on_cyan(f'Found <<<{title}>>> <<<{salary}>>> at <<{company_name}>> at <<<< {date_time} >>>> with url {anchor_tag_value}')
-                    # check for easy apply/default apply -> apply/skip based on easy apply, put record into db once applied/not applied with adequate status.
-                    # todo // keep track of visited urls + titles/comapnies, skip urls if they were already visited during single session (some jobs are posted multiple times)
 
                     # open new tab, sanitize url, paste sanitized url -> query params are stripped because they act as unique identifiers in pocketbase
                     driver.execute_script("window.open('');")
@@ -174,6 +171,9 @@ def main_loop(pages_with_offers_num):
                     sanitized_url = sanitize_url(anchor_tag_value)
                     driver.get(sanitized_url)
 
+                    print_red_on_cyan(f'Found <<<{title}>>> <<<{salary}>>> at <<{company_name}>> at <<<< {date_time} >>>> with url {sanitized_url}')
+                    
+                    # check for easy apply/default apply -> apply/skip based on easy apply, put record into db once applied/not applied with adequate status.
                     try:
                         easy_apply_div = driver.find_element(By.XPATH, os.getenv("EASY_APPLY_DIV"))
                         print_yellow_on_green(f'FOUND EASY APPLY BUTTON')
@@ -222,6 +222,5 @@ for i in range(1, offer_pages_amount):
     main_loop(i)
 
 print_yellow_on_green(f'Finished scraping {offer_pages_amount} pages, exiting.')
-time.sleep(3)
 
 driver.quit()
